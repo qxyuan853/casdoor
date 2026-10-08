@@ -206,6 +206,29 @@ func DeleteInvitation(invitation *Invitation) (bool, error) {
 	return affected != 0, nil
 }
 
+// ConsumeInvitation takes one use in a single conditional UPDATE, so concurrent sign-ups
+// that all passed the UsedCount < Quota check cannot each write back the same stale count
+func ConsumeInvitation(invitation *Invitation) (bool, error) {
+	affected, err := ormer.Engine.ID(core.PK{invitation.Owner, invitation.Name}).
+		Where("used_count < quota").
+		Incr("used_count", 1).
+		Update(&Invitation{UpdatedTime: util.GetCurrentTime()})
+	if err != nil {
+		return false, err
+	}
+
+	return affected != 0, nil
+}
+
+// ReleaseInvitation gives back a use taken by a sign-up that did not create its user
+func ReleaseInvitation(invitation *Invitation) error {
+	_, err := ormer.Engine.ID(core.PK{invitation.Owner, invitation.Name}).
+		Where("used_count > 0").
+		Decr("used_count", 1).
+		Update(&Invitation{UpdatedTime: util.GetCurrentTime()})
+	return err
+}
+
 func (invitation *Invitation) GetId() string {
 	return fmt.Sprintf("%s/%s", invitation.Owner, invitation.Name)
 }

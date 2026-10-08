@@ -290,14 +290,30 @@ func (c *ApiController) Signup() {
 		user.Tag = application.DefaultTag
 	}
 
-	affected, err := object.AddUser(user, c.GetAcceptLanguage())
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
+	if invitation != nil {
+		consumed, err := object.ConsumeInvitation(invitation)
+		if err != nil {
+			c.ResponseError(err.Error())
+			return
+		}
+		if !consumed {
+			c.ResponseError(c.T("check:Invitation code exhausted"))
+			return
+		}
 	}
 
-	if !affected {
-		c.ResponseError(c.T("account:Failed to add user"), util.StructToJson(user))
+	affected, err := object.AddUser(user, c.GetAcceptLanguage())
+	if err != nil || !affected {
+		if invitation != nil {
+			if releaseErr := object.ReleaseInvitation(invitation); releaseErr != nil {
+				util.LogWarning(c.Ctx, "failed to release invitation %s: %v", invitation.GetId(), releaseErr)
+			}
+		}
+		if err != nil {
+			c.ResponseError(err.Error())
+		} else {
+			c.ResponseError(c.T("account:Failed to add user"), util.StructToJson(user))
+		}
 		return
 	}
 
@@ -305,15 +321,6 @@ func (c *ApiController) Signup() {
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
-	}
-
-	if invitation != nil {
-		invitation.UsedCount += 1
-		_, err := object.UpdateInvitation(invitation.GetId(), invitation, c.GetAcceptLanguage())
-		if err != nil {
-			c.ResponseError(err.Error())
-			return
-		}
 	}
 
 	if user.Type == "normal-user" {

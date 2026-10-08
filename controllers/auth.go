@@ -1307,26 +1307,33 @@ func (c *ApiController) Login() {
 						user.Tag = application.DefaultTag
 					}
 
-					var affected bool
-					affected, err = object.AddUser(user, c.GetAcceptLanguage())
-					if err != nil {
-						c.ResponseError(err.Error())
-						return
-					}
-
-					if !affected {
-						c.ResponseError(fmt.Sprintf(c.T("auth:Failed to create user, user information is invalid: %s"), util.StructToJson(user)))
-						return
-					}
-
-					// Increment invitation usage count
 					if invitation != nil {
-						invitation.UsedCount += 1
-						_, err = object.UpdateInvitation(invitation.GetId(), invitation, c.GetAcceptLanguage())
+						var consumed bool
+						consumed, err = object.ConsumeInvitation(invitation)
 						if err != nil {
 							c.ResponseError(err.Error())
 							return
 						}
+						if !consumed {
+							c.ResponseError(c.T("check:Invitation code exhausted"))
+							return
+						}
+					}
+
+					var affected bool
+					affected, err = object.AddUser(user, c.GetAcceptLanguage())
+					if err != nil || !affected {
+						if invitation != nil {
+							if releaseErr := object.ReleaseInvitation(invitation); releaseErr != nil {
+								util.LogWarning(c.Ctx, "failed to release invitation %s: %v", invitation.GetId(), releaseErr)
+							}
+						}
+						if err != nil {
+							c.ResponseError(err.Error())
+						} else {
+							c.ResponseError(fmt.Sprintf(c.T("auth:Failed to create user, user information is invalid: %s"), util.StructToJson(user)))
+						}
+						return
 					}
 				}
 
