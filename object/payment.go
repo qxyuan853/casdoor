@@ -401,12 +401,19 @@ func NotifyPayment(body []byte, owner string, paymentName string, lang string) (
 			}
 		}
 
+		// the balance is credited with the order's recharge products only, never with the
+		// whole payment: an order that also buys ordinary products would otherwise hand
+		// their price back as balance while the products are still delivered
+		if rechargeAmount > payment.Price {
+			rechargeAmount = payment.Price
+		}
+
 		if hasRecharge {
 			rechargeTransaction := &Transaction{
 				Owner:       payment.Owner,
 				CreatedTime: util.GetCurrentTime(),
 				Application: user.SignupApplication,
-				Amount:      payment.Price,
+				Amount:      rechargeAmount,
 				Currency:    order.Currency,
 				Payment:     payment.Name,
 				Category:    TransactionCategoryRecharge,
